@@ -1,4 +1,5 @@
-uploads
+document_uploads
+.venv
 
 # Logs
 logs
