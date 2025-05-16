@@ -19,15 +19,17 @@ upload_multiple_choice_test = Blueprint('upload_multiple_choice_test', __name__)
 
 # Global config
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-MODEL = "openai/gpt-4o-mini"
+# MODEL = "openai/gpt-4o-mini"
+MODEL = "google/gemini-2.0-flash-001"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 UPLOAD_FOLDER = 'uploads'
 
-
+# Json output schema
 class QuestionItem(BaseModel):
     question: str = Field(description="The question text")
     choices: List[str] = Field(description="The list of answer choices")
     answer: str = Field(description="The correct answer out of the choices")
+    explanation: str = Field(description="The explanation for the correct answer")
 
 
 class ResponseList(BaseModel):
@@ -80,6 +82,7 @@ def generate_upload_multiple_choice_test():
         def retrieve_context(query: str) -> str:
             """Use this to retrieve relevant context for test generation from the uploaded document."""
             docs = retriever.invoke(query)
+            print("\n\n".join([doc.page_content for doc in docs]))
             return "\n\n".join([doc.page_content for doc in docs])
         
 
@@ -99,10 +102,10 @@ def generate_upload_multiple_choice_test():
 
         # build prompt with format instructions
         system_prompt = f"""
-        You are a helpful multiple‐choice test generator. Use retrieve_context() to fetch document excerpts.
+        You are a helpful multiple-choice test generator. Use retrieve_context() to fetch document excerpts.
         The user will describe a test they want, and you will:
         1. Call the tool to get context based on the topic.
-        2. Generate exactly {num_questions} multiple‐choice questions with {num_choices} answer choices each, based on that context.
+        2. Generate exactly {num_questions} multiple-choice questions with {num_choices} answer choices each, based on that context.
         3. **Strictly** output JSON matching the given schema.
 
         {format_instructions}
@@ -110,8 +113,11 @@ def generate_upload_multiple_choice_test():
         Ensure that:
         - Choices are mutually exclusive.
         - Only one correct answer is provided.
-        - Each question is unique from one another and covers various parts of the prompted topic.
-        - The output is raw JSON without any markdown formatting, code fences, or explanations.
+        - Each question is unique from one another. NO DUPLICATES.
+        - The test follows any specifications in the prompt and covers a wide variety within those specifications.
+        - Each explanation is brief, but useful and educational. No more than 2 sentences.
+       
+        Call the tool multiple times if necessary.
 
         When you are completely done generating all questions, immediately output **only** the final JSON object (no thoughts, no tool calls, no extra text). That final JSON is your last token output.
         """
@@ -120,12 +126,12 @@ def generate_upload_multiple_choice_test():
             model=llm,
             tools=[retrieve_context],
             prompt=system_prompt.strip(),
-            response_format=(system_prompt.strip(), ResponseList),   # ← critical
+            response_format=(system_prompt.strip(), ResponseList),
         )
 
         # invoke and parse
         output = agent.invoke(
-            {"messages":[{"role":"user","content":prompt}]},
+            {"messages":[{"role":"user","content": prompt}]},
             config={"recursion_limit": 50}
         )
 
