@@ -2,7 +2,15 @@ from flask import Blueprint, request, jsonify
 import os
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
+import mimetypes
+import re
+from langchain_community.document_loaders import (
+    PyPDFLoader,
+    TextLoader,
+    UnstructuredWordDocumentLoader,
+    UnstructuredURLLoader,
+    YoutubeLoader
+)
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -13,9 +21,11 @@ from langchain.agents import initialize_agent, AgentExecutor, tool
 from langgraph.prebuilt import create_react_agent
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 import json
+import requests
+import tempfile
 
 
-upload_multiple_choice_test = Blueprint('upload_multiple_choice_test', __name__)
+link_flashcards_bp = Blueprint('link_flashcards', __name__)
 
 # Global config
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -24,19 +34,17 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 UPLOAD_FOLDER = 'document_uploads'
 
 # Json output schema
-class QuestionItem(BaseModel):
-    question: str = Field(description="The question text")
-    choices: List[str] = Field(description="The list of answer choices")
-    answer: str = Field(description="The correct answer out of the choices")
-    explanation: str = Field(description="The explanation for the correct answer")
+class FlashcardItem(BaseModel):
+    front: str = Field(description="The front of a flashcard. A question or vocabulary word.")
+    back: List[str] = Field(description="The back of a flashcard. The answer or definition to the question or word.")
 
 
 class ResponseList(BaseModel):
-    questions: List[QuestionItem]
+    flashcards: List[FlashcardItem]
 
 
-@upload_multiple_choice_test.route('/api/generate-upload-multiple-choice-test', methods=['POST'])
-def generate_upload_multiple_choice_test():
+@link_flashcards_bp.route('/api/generate-link-flashcards', methods=['POST'])
+def upload_flashcards():
     # --------------------------------------------------------------------- LOAD VARIABLES ---------------------------------------------------------------------
 
     if not OPENROUTER_API_KEY:
@@ -44,29 +52,51 @@ def generate_upload_multiple_choice_test():
 
     data = request.get_json()
     prompt = data.get("prompt")
-    num_questions = data.get("numQuestions")
-    num_choices = data.get("numChoices")
-    file_id = data.get('file_id')
+    num_flashcards = data.get("numFlashcards")
+    link = data.get('link')
 
     print('data:', data)
 
-    if not all([num_questions, num_choices, file_id]):
+    if not all([num_flashcards, link]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    filepath = None
-    for fname in os.listdir(UPLOAD_FOLDER):
-        if fname.startswith(file_id):
-            filepath = os.path.join(UPLOAD_FOLDER, fname)
-            break
-    if not filepath:
-        return jsonify({'error': 'File not found'}), 404
 
     try:
         # --------------------------------------------------------------------- RAG SETUP ---------------------------------------------------------------------
+        def is_youtube(link):
+            return "youtube.com" in link or "youtu.be" in link
 
-        def load_document(filepath):
+        def is_article(link):
+            return link.startswith("http") and not is_youtube(link)
+
+        def load_link(link):
+            # YouTube Link
+            if is_youtube(link):
+                print('youtube link identified')
+                loader = YoutubeLoader.from_youtube_url(link, add_video_info=False)
+                return loader.load()
+
+            # Web Article
+            if is_article(link):
+                print('article link identified')
+                loader = UnstructuredURLLoader(urls=[link])
+                return loader.load()
+
+
+            print('file link identified')
+            # Direct File Link
+            response = requests.get(link)
+            if response.status_code != 200:
+                raise ValueError("Failed to download file from URL")
+
+            content_type = response.headers.get("Content-Type", "")
+            ext = mimetypes.guess_extension(content_type) or os.path.splitext(link)[1] or ".pdf"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                tmp_file.write(response.content)
+                filepath = tmp_file.name
+
+            # Load based on extension
             ext = os.path.splitext(filepath)[1].lower()
-
             if ext == ".pdf":
                 loader = PyPDFLoader(filepath)
             elif ext == ".txt":
@@ -79,10 +109,7 @@ def generate_upload_multiple_choice_test():
             return loader.load()
 
         # Load the document
-        documents = load_document(filepath)
-
-        for i, doc in enumerate(documents):
-            doc.metadata["source"] = f"{fname} - Page {i + 1}"
+        documents = load_link(link)
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
         docs = splitter.split_documents(documents)
@@ -114,26 +141,23 @@ def generate_upload_multiple_choice_test():
             openai_api_base="https://openrouter.ai/api/v1"
         )
 
-        # build prompt with format instructions
         system_prompt = f"""
-        You are a helpful multiple-choice test generator. Use retrieve_context() to fetch document excerpts.
-        The user will describe a test they want, and you will:
+        You are a helpful flashcard generator. Use retrieve_context() to fetch document excerpts.
+        The user will describe a set of flashcards they want, and you will:
         1. Call the tool to get context based on the topic.
-        2. Generate exactly {num_questions} multiple-choice questions with {num_choices} answer choices each, based on that context.
+        2. Generate exactly {num_flashcards} flashcards, each with a front and a back, based on that context.
         3. **Strictly** output JSON matching the given schema.
 
         {format_instructions}
 
         Ensure that:
-        - Choices are mutually exclusive.
-        - Only one correct answer is provided.
-        - Each question is unique from one another. NO DUPLICATES.
-        - The test follows any specifications in the prompt and covers a wide variety within those specifications.
-        - Each explanation is brief, but useful and educational. No more than 2 sentences.
+        - Each flashcard is unique from one another. NO DUPLICATES.
+        - The test follows any specifications in the query.
+        - The content in each flashcard is useful and educational. No more than 3 sentences.
        
         Call the tool multiple times if necessary.
 
-        When you are completely done generating all questions, immediately output **only** the final JSON object (no thoughts, no tool calls, no extra text). That final JSON is your last token output.
+        When you are completely done generating all flashcards, immediately output **only** the final JSON object (no thoughts, no tool calls, no extra text). That final JSON is your last token output.
         """
 
         agent = create_react_agent(
@@ -143,9 +167,8 @@ def generate_upload_multiple_choice_test():
             response_format=(system_prompt.strip(), ResponseList),
         )
 
-        # invoke and parse
         output = agent.invoke(
-            {"messages":[{"role":"user","content": f"Generate a multiple-choice test based on the uploaded document. Additional Directions: {f'{prompt}' if prompt else "none"}"}]},
+            {"messages":[{"role":"user","content": f"Generate flashcards based on the uploaded document. Additional Directions: {f'{prompt}' if prompt else "none"}"}]},
             config={"recursion_limit": 50}
         )
 

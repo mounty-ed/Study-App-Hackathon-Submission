@@ -17,7 +17,7 @@ def upload_file():
     file_id = str(uuid.uuid4())
     filename = f"{file_id}_{file.filename}"
     filepath = os.path.join(DOCUMENT_FOLDER, filename)
-    
+
     # Save the file
     file.save(filepath)
 

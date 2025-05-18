@@ -15,7 +15,7 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 import json
 
 
-upload_multiple_choice_test = Blueprint('upload_multiple_choice_test', __name__)
+upload_flashcards_bp = Blueprint('upload_flashcards', __name__)
 
 # Global config
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -24,19 +24,17 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 UPLOAD_FOLDER = 'document_uploads'
 
 # Json output schema
-class QuestionItem(BaseModel):
-    question: str = Field(description="The question text")
-    choices: List[str] = Field(description="The list of answer choices")
-    answer: str = Field(description="The correct answer out of the choices")
-    explanation: str = Field(description="The explanation for the correct answer")
+class FlashcardItem(BaseModel):
+    front: str = Field(description="The front of a flashcard. A question or vocabulary word.")
+    back: List[str] = Field(description="The back of a flashcard. The answer or definition to the question or word.")
 
 
 class ResponseList(BaseModel):
-    questions: List[QuestionItem]
+    flashcards: List[FlashcardItem]
 
 
-@upload_multiple_choice_test.route('/api/generate-upload-multiple-choice-test', methods=['POST'])
-def generate_upload_multiple_choice_test():
+@upload_flashcards_bp.route('/api/generate-upload-flashcards', methods=['POST'])
+def upload_flashcards():
     # --------------------------------------------------------------------- LOAD VARIABLES ---------------------------------------------------------------------
 
     if not OPENROUTER_API_KEY:
@@ -44,13 +42,12 @@ def generate_upload_multiple_choice_test():
 
     data = request.get_json()
     prompt = data.get("prompt")
-    num_questions = data.get("numQuestions")
-    num_choices = data.get("numChoices")
+    num_flashcards = data.get("numFlashcards")
     file_id = data.get('file_id')
 
     print('data:', data)
 
-    if not all([num_questions, num_choices, file_id]):
+    if not all([num_flashcards, file_id]):
         return jsonify({"error": "Missing required fields"}), 400
 
     filepath = None
@@ -63,7 +60,6 @@ def generate_upload_multiple_choice_test():
 
     try:
         # --------------------------------------------------------------------- RAG SETUP ---------------------------------------------------------------------
-
         def load_document(filepath):
             ext = os.path.splitext(filepath)[1].lower()
 
@@ -116,24 +112,22 @@ def generate_upload_multiple_choice_test():
 
         # build prompt with format instructions
         system_prompt = f"""
-        You are a helpful multiple-choice test generator. Use retrieve_context() to fetch document excerpts.
-        The user will describe a test they want, and you will:
+        You are a helpful flashcard generator. Use retrieve_context() to fetch document excerpts.
+        The user will describe a set of flashcards they want, and you will:
         1. Call the tool to get context based on the topic.
-        2. Generate exactly {num_questions} multiple-choice questions with {num_choices} answer choices each, based on that context.
+        2. Generate exactly {num_flashcards} flashcards, each with a front and a back, based on that context.
         3. **Strictly** output JSON matching the given schema.
 
         {format_instructions}
 
         Ensure that:
-        - Choices are mutually exclusive.
-        - Only one correct answer is provided.
-        - Each question is unique from one another. NO DUPLICATES.
-        - The test follows any specifications in the prompt and covers a wide variety within those specifications.
-        - Each explanation is brief, but useful and educational. No more than 2 sentences.
+        - Each flashcard is unique from one another. NO DUPLICATES.
+        - The test follows any specifications in the query.
+        - The content in each flashcard is useful and educational. No more than 3 sentences.
        
         Call the tool multiple times if necessary.
 
-        When you are completely done generating all questions, immediately output **only** the final JSON object (no thoughts, no tool calls, no extra text). That final JSON is your last token output.
+        When you are completely done generating all flashcards, immediately output **only** the final JSON object (no thoughts, no tool calls, no extra text). That final JSON is your last token output.
         """
 
         agent = create_react_agent(
@@ -145,7 +139,7 @@ def generate_upload_multiple_choice_test():
 
         # invoke and parse
         output = agent.invoke(
-            {"messages":[{"role":"user","content": f"Generate a multiple-choice test based on the uploaded document. Additional Directions: {f'{prompt}' if prompt else "none"}"}]},
+            {"messages":[{"role":"user","content": f"Generate flashcards based on the uploaded document. Additional Directions: {f'{prompt}' if prompt else "none"}"}]},
             config={"recursion_limit": 50}
         )
 

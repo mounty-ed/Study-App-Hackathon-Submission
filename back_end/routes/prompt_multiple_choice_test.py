@@ -19,7 +19,6 @@ prompt_multiple_choice_test_bp = Blueprint('prompt_multiple_choice_test', __name
 
 # Global config
 MODEL = "openai/gpt-4o-mini"
-# MODEL = "google/gemini-2.0-flash-001"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
