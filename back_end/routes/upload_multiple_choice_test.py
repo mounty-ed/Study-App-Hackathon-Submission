@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 import os
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -17,11 +17,7 @@ import json
 
 upload_multiple_choice_test = Blueprint('upload_multiple_choice_test', __name__)
 
-# Global config
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-MODEL = "openai/gpt-4o-mini"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-UPLOAD_FOLDER = 'document_uploads'
+
 
 # Json output schema
 class QuestionItem(BaseModel):
@@ -37,8 +33,12 @@ class ResponseList(BaseModel):
 
 @upload_multiple_choice_test.route('/api/generate-upload-multiple-choice-test', methods=['POST'])
 def generate_upload_multiple_choice_test():
+    # Global config
+    EMBEDDING_MODEL = current_app.config['EMBEDDING_MODEL']
+    MODEL = current_app.config['MODEL']
+    OPENROUTER_API_KEY = current_app.config['OPENROUTER_API_KEY']
+    UPLOAD_FOLDER = current_app.config['UPLOAD_FOLDER']
     # --------------------------------------------------------------------- LOAD VARIABLES ---------------------------------------------------------------------
-
     if not OPENROUTER_API_KEY:
         return jsonify({"error": "Missing OPENROUTER_API_KEY"}), 500
 

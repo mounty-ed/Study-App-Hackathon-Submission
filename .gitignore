@@ -1,5 +1,6 @@
 document_uploads
 .venv
+__pycache__/
 
 # Logs
 logs

@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 import os
 import json
 from langchain_community.tools.tavily_search import TavilySearchResults
@@ -17,10 +17,6 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 prompt_multiple_choice_test_bp = Blueprint('prompt_multiple_choice_test', __name__)
 
-# Global config
-MODEL = "openai/gpt-4o-mini"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # Json output schema
 class QuestionItem(BaseModel):
@@ -34,6 +30,11 @@ class ResponseList(BaseModel):
 
 @prompt_multiple_choice_test_bp.route("/api/generate-prompt-multiple-choice-test", methods=["POST"])
 def generate_prompt_multiple_choice_test():
+    # Global config
+    EMBEDDING_MODEL = current_app.config['EMBEDDING_MODEL']
+    MODEL = current_app.config['MODEL']
+    OPENROUTER_API_KEY = current_app.config['OPENROUTER_API_KEY']
+    TAVILY_API_KEY = current_app.config['TAVILY_API_KEY']
     # --------------------------------------------------------------------- LOAD VARIABLES ---------------------------------------------------------------------
 
     if not OPENROUTER_API_KEY:
@@ -56,7 +57,7 @@ def generate_prompt_multiple_choice_test():
         citations = []
         search_tool = TavilySearchResults(
             api_key=TAVILY_API_KEY, 
-            max_results=20, 
+            max_results=6, 
             search_depth='advanced',
             include_domains=["wikipedia.org", "britannica.com"])
 

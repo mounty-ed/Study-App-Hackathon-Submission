@@ -1,11 +1,9 @@
-from flask import Flask, request, jsonify, Blueprint
+from flask import Blueprint, request, jsonify, current_app
 import os
 import uuid
 
-file_upload_bp = Blueprint('file_upload', __name__)
 
-DOCUMENT_FOLDER = 'document_uploads'
-os.makedirs(DOCUMENT_FOLDER, exist_ok=True)
+file_upload_bp = Blueprint('file_upload', __name__)
 
 @file_upload_bp.route('/api/upload-file', methods=['POST'])
 def upload_file():
@@ -16,7 +14,7 @@ def upload_file():
     # Give file a unique ID
     file_id = str(uuid.uuid4())
     filename = f"{file_id}_{file.filename}"
-    filepath = os.path.join(DOCUMENT_FOLDER, filename)
+    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
 
     # Save the file
     file.save(filepath)

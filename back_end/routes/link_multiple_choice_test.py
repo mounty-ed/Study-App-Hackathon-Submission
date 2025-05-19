@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 import os
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -27,11 +27,6 @@ import tempfile
 
 link_multiple_choice_test_bp = Blueprint('link_multiple_choice_test', __name__)
 
-# Global config
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-MODEL = "openai/gpt-4o-mini"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-UPLOAD_FOLDER = 'document_uploads'
 
 # Json output schema
 class QuestionItem(BaseModel):
@@ -46,6 +41,11 @@ class ResponseList(BaseModel):
 
 @link_multiple_choice_test_bp.route('/api/generate-link-multiple-choice-test', methods=['POST'])
 def generate_link_multiple_choice_test():
+    # Global config
+    EMBEDDING_MODEL = current_app.config['EMBEDDING_MODEL']
+    MODEL = current_app.config['MODEL']
+    OPENROUTER_API_KEY = current_app.config['OPENROUTER_API_KEY']
+    UPLOAD_FOLDER = current_app.config['UPLOAD_FOLDER']
     # --------------------------------------------------------------------- LOAD VARIABLES ---------------------------------------------------------------------
 
     if not OPENROUTER_API_KEY:
@@ -70,6 +70,7 @@ def generate_link_multiple_choice_test():
 
         def is_article(link):
             return link.startswith("http") and not is_youtube(link)
+        
 
         def load_link(link):
             # YouTube Link

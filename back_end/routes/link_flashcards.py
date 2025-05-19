@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 import os
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -27,16 +27,11 @@ import tempfile
 
 link_flashcards_bp = Blueprint('link_flashcards', __name__)
 
-# Global config
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-MODEL = "openai/gpt-4o-mini"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-UPLOAD_FOLDER = 'document_uploads'
 
 # Json output schema
 class FlashcardItem(BaseModel):
     front: str = Field(description="The front of a flashcard. A question or vocabulary word.")
-    back: List[str] = Field(description="The back of a flashcard. The answer or definition to the question or word.")
+    back: str = Field(description="The back of a flashcard. The answer or definition to the question or word.")
 
 
 class ResponseList(BaseModel):
@@ -45,6 +40,11 @@ class ResponseList(BaseModel):
 
 @link_flashcards_bp.route('/api/generate-link-flashcards', methods=['POST'])
 def upload_flashcards():
+    # Global config
+    EMBEDDING_MODEL = current_app.config['EMBEDDING_MODEL']
+    MODEL = current_app.config['MODEL']
+    OPENROUTER_API_KEY = current_app.config['OPENROUTER_API_KEY']
+    UPLOAD_FOLDER = current_app.config['UPLOAD_FOLDER']
     # --------------------------------------------------------------------- LOAD VARIABLES ---------------------------------------------------------------------
 
     if not OPENROUTER_API_KEY:
